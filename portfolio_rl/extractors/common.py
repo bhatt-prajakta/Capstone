@@ -19,7 +19,8 @@ import os
 import logging
 import time
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
+from pandas.tseries import api
 import requests
 import yaml
 
@@ -47,8 +48,13 @@ def load_api_key(config_file: str = "config/config.yaml"):
 
 
 def fetch_alpha_vantage_data(
-    function: str, symbol: str, api_key: str, max_retries: int = 3
-) -> Optional[Dict[str, Any]]:
+    function: str,
+    symbol: str,
+    api_key: str,
+    max_retries: int = 3,
+    outputsize: str = "full",
+    datatype: str = "json",
+) -> Optional[Union[Dict[str, Any], str]]:
     """Generic function to fetch data from Alpha Vantage API"""
     # Get config data
     config_file = "config/config.yaml"
@@ -57,7 +63,15 @@ def fetch_alpha_vantage_data(
 
     contact_email = config["alpha_vantage"]["contact_email"]
 
-    url = f"https://www.alphavantage.co/query?function={function}&symbol={symbol}&apikey={api_key}"
+    # Base URL
+    base_url = f"https://www.alphavantage.co/query?function={function}&symbol={symbol}&apikey={api_key}"
+
+    # Additional parameters for stock price data
+    if function == "TIME_SERIES_DAILY":
+        url = f"{base_url}&outputsize={outputsize}&datatype={datatype}"
+    else:
+        url = base_url
+
     headers = {"User-Agent": f"PortfolioProphets-UMichCapstone/1.0 ({contact_email})"}
 
     retries = 0
@@ -67,21 +81,24 @@ def fetch_alpha_vantage_data(
             response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
 
-            data = response.json()
+            if datatype.lower() == "csv" and function == "TIME_SERIES_DAILY":
+                return response.text
+            else:
+                data = response.json()
 
-            # Check if the API returned an error message
-            if "Error Message" in data:
-                logger.warning("Alpha Vantage API error: %s", data["Error Message"])
-                raise ValueError("Alpha Vantage API error")
+                # Check if the API returned an error message
+                if "Error Message" in data:
+                    logger.warning("Alpha Vantage API error: %s", data["Error Message"])
+                    raise ValueError("Alpha Vantage API error")
 
-            # Check for API limit message
-            if "Note" in data and "API call frequency" in data["Note"]:
-                logger.warning("Alpha Vantage API rate limit exceeded")
-                time.sleep(60)  # Sleep for 60 seconds before retrying
-                retries += 1
-                continue
+                # Check for API limit message
+                if "Note" in data and "API call frequency" in data["Note"]:
+                    logger.warning("Alpha Vantage API rate limit exceeded")
+                    time.sleep(60)  # Sleep for 60 seconds before retrying
+                    retries += 1
+                    continue
 
-            return data
+                return data
 
         except requests.exceptions.RequestException as e:
             logger.error("Alpha Vantage API request error: %s", str(e))
@@ -123,4 +140,29 @@ def save_to_file(data: Dict[str, Any], filename: str) -> bool:
         return True
     except Exception as e:
         logger.error("Error saving data to %s: %s", filename, str(e))
+        return False
+
+
+def save_csv_to_file(csv_data: str, filename: str) -> bool:
+    """Save raw CSV data to a file.
+
+    Args:
+        csv_data (str): Raw CSV data as string
+        filename (str): Output filename
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+
+        # Write the CSV data directly to file
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(csv_data)
+
+        logger.info("Successfully saved CSV data to %s", filename)
+        return True
+    except Exception as e:
+        logger.error("Error saving CSV data to %s: %s", filename, str(e))
         return False
