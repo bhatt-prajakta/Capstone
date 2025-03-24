@@ -98,7 +98,7 @@ def load_financial_statements(symbol: str, base_path: str = "data") -> pd.DataFr
     return merged_df
 
 
-def calculate_ratios(df: pd.DataFrame) -> pd.DataFrame:
+def calculate_activity_ratios(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate financial ratios based on the provided financial statements dataframe.
 
@@ -157,6 +157,7 @@ def calculate_ratios(df: pd.DataFrame) -> pd.DataFrame:
     ) / 2
 
     # Calculate activity ratios
+    # Measures the efficiency of a company's operations
     calculated_df["inventory_turnover"] = (
         df["cost_of_goods_and_services_sold"] / calculated_df["average_inventory"]
     )
@@ -191,6 +192,47 @@ def calculate_ratios(df: pd.DataFrame) -> pd.DataFrame:
     return calculated_df
 
 
+def calculate_liquidity_ratios(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate liquidity ratios based on the provided financial statements dataframe.
+    The liquidity ratios measure the company's ability to meet its short-term obligations.
+    """
+    liquidity_df = pd.DataFrame()
+    liquidity_df["date"] = df["fiscal_date_ending"]
+
+    # Calculate intermediate values
+    liquidity_df["daily_cash_expenditures"] = (
+        df["cost_of_goods_and_services_sold"]
+        + df["selling_general_and_administrative"]
+        + df["research_and_development"]
+        - df["depreciation_and_amortization"]
+    ) / DAYS_IN_QUARTER
+
+    liquidity_df["current_ratio"] = (
+        df["total_current_assets"] / df["total_current_liabilities"]
+    )
+
+    liquidity_df["quick_ratio"] = (
+        df["cash_and_short_term_investments"] + df["current_net_receivables"]
+    ) / df["total_current_liabilities"]
+
+    liquidity_df["cash_ratio"] = (
+        df["cash_and_short_term_investments"] / df["total_current_liabilities"]
+    )
+
+    liquidity_df["defensive_internal_ratio"] = (
+        df["cash_and_short_term_investments"] / liquidity_df["daily_cash_expenditures"]
+    )
+
+    # Calculate solvency ratios
+    # Measures the company's ability to meet its long-term obligations
+
+    # Calculate profitabilty ratios
+    # Measures the company's ability to generate profits from its resources or sales
+
+    return liquidity_df
+
+
 # testing function
 if __name__ == "__main__":
     symbol = "AAPL"
@@ -198,7 +240,18 @@ if __name__ == "__main__":
     # save as csv
     df.to_csv(f"{symbol}_financial_statement.csv", index=False)
 
-    ratios = calculate_ratios(df)
+    activity_ratios = calculate_activity_ratios(df)
+    liquidity_ratios = calculate_liquidity_ratios(df)
+    if "date" in activity_ratios.columns and "date" in liquidity_ratios.columns:
+        # Set date as index in liquidity_ratios to avoid duplicating it
+        liquidity_ratios = liquidity_ratios.set_index("date")
+        # Merge the dataframes
+        ratios = activity_ratios.set_index("date").join(liquidity_ratios)
+        # Reset index to keep date as a column
+        ratios = ratios.reset_index()
+    else:
+        # If date column not present or has different name, just concat
+        ratios = pd.concat([activity_ratios, liquidity_ratios], axis=1)
     ratios.to_csv(f"{symbol}_ratios.csv", index=False)
 
     # Display results
