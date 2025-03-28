@@ -15,7 +15,10 @@ def fetch_balance_sheet(symbol: str, api_key: str) -> Optional[Dict[str, Any]]:
     Returns:
         Optional[Dict[str, Any]]: Balance sheet data or None if failed
     """
-    return fetch_alpha_vantage_data("BALANCE_SHEET", symbol, api_key)
+    result = fetch_alpha_vantage_data("BALANCE_SHEET", symbol, api_key)
+    if isinstance(result, dict):
+        return result
+    return None
 
 
 def process_quarterly_balance_sheet(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -179,7 +182,7 @@ def process_quarterly_balance_sheet(data: Dict[str, Any]) -> Optional[Dict[str, 
 def fetch_and_process_balance_sheet(
     symbol: str,
     api_key: str,
-    output_dir: str = "data/balance_sheets",
+    output_dir: str = "data/raw/balance_sheets",
 ) -> Optional[Dict[str, Any]]:
     """
     Fetch and process balance sheet data for a symbol.

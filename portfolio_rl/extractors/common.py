@@ -20,7 +20,6 @@ import logging
 import time
 import json
 from typing import Any, Dict, Optional, Union
-from pandas.tseries import api
 import requests
 import yaml
 

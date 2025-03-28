@@ -15,7 +15,10 @@ def fetch_income_statement(symbol: str, api_key: str) -> Optional[Dict[str, Any]
     Returns:
         Optional[Dict[str, Any]]: Income statement data or None if failed
     """
-    return fetch_alpha_vantage_data("INCOME_STATEMENT", symbol, api_key)
+    result = fetch_alpha_vantage_data("INCOME_STATEMENT", symbol, api_key)
+    if isinstance(result, dict):
+        return result
+    return None
 
 
 def process_quarterly_income_statement(
@@ -145,7 +148,7 @@ def process_quarterly_income_statement(
 def fetch_and_process_income_statement(
     symbol: str,
     api_key: str,
-    output_dir: str = "data/income_statements",
+    output_dir: str = "data/raw/income_statements",
 ) -> Optional[Dict[str, Any]]:
     """
     Fetch and process income statement data for a symbol.

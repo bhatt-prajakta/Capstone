@@ -15,11 +15,14 @@ def fetch_cashflow_statement(symbol: str, api_key: str) -> Optional[Dict[str, An
     Returns:
         Optional[Dict[str, Any]]: Cash flow statement data or None if failed
     """
-    return fetch_alpha_vantage_data("CASH_FLOW", symbol, api_key)
+    result = fetch_alpha_vantage_data("CASH_FLOW", symbol, api_key)
+    if isinstance(result, dict):
+        return result
+    return None
 
 
 def process_quarterly_cashflow_statement(
-    data: Dict[str, Any]
+    data: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
     """
     Processes quarterly cash flow statement data.
@@ -171,7 +174,7 @@ def process_quarterly_cashflow_statement(
 def fetch_and_process_cashflow_statement(
     symbol: str,
     api_key: str,
-    output_dir: str = "data/cashflow_statements",
+    output_dir: str = "data/raw/cashflow_statements",
 ) -> Optional[Dict[str, Any]]:
     """
     Fetch and process cash flow statement data for a symbol.
