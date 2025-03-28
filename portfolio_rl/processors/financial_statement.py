@@ -1,5 +1,36 @@
+"""
+Financial Statement Analysis Module (processors/financial_statement.py)
+
+This module provides comprehensive functionality for loading, processing, and analyzing
+financial statements from publicly traded companies. It consolidates balance sheet,
+income statement, and cash flow statement data into a single dataframe, and offers
+analytical tools to calculate key financial ratios across several categories:
+
+- Activity ratios: Measure operational efficiency (inventory turnover, receivables turnover, etc.)
+- Liquidity ratios: Assess short-term payment capability (current ratio, quick ratio, etc.)
+- Solvency ratios: Evaluate long-term debt obligations (debt-to-equity, leverage, etc.)
+- Profitability ratios: Analyze earning capability (profit margins, ROA, ROE, etc.)
+
+Usage:
+    To analyze a specific company:
+        python portfolio_rl/processors/financial_statement.py AAPL
+
+    Additional options:
+        --base_path: Specify data directory (default: 'data')
+        --output_dir: Specify output directory (default: current directory)
+
+Data Assumptions:
+    - Quarterly financial data is used in calculations
+    - Average values use current and previous quarter
+    - First row may contain NaN for ratios requiring averages
+
+Returns:
+    For each ticker symbol, the module generates:
+    - A combined financial statement CSV file
+    - A comprehensive financial ratios CSV file with all calculated metrics
+"""
+
 import os
-import sys
 import argparse
 import pandas as pd
 import numpy as np
@@ -22,14 +53,16 @@ def load_financial_statements(symbol: str, base_path: str = "data") -> pd.DataFr
     Returns:
         pd.DataFrame: Combined financial statements data for the given symbol
     """
+    raw_path = os.path.join(base_path, "raw")
+
     balance_sheet_path = os.path.join(
-        base_path, f"balance_sheets/{symbol}_balance_sheet.json"
+        raw_path, f"balance_sheets/{symbol}_balance_sheet.json"
     )
     income_statement_path = os.path.join(
-        base_path, f"income_statements/{symbol}_income_statement.json"
+        raw_path, f"income_statements/{symbol}_income_statement.json"
     )
     cashflow_statement_path = os.path.join(
-        base_path, f"cashflow_statements/{symbol}_cashflow_statement.json"
+        raw_path, f"cashflow_statements/{symbol}_cashflow_statement.json"
     )
 
     try:
@@ -365,23 +398,48 @@ def fetch_additional_metrics(df: pd.DataFrame) -> pd.DataFrame:
     return additional_metrics_df
 
 
-# testing function
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process financial statement data")
     parser.add_argument("symbol", type=str, help="Stock symbol to process")
+    parser.add_argument(
+        "--base_path",
+        type=str,
+        default="data",
+        help="Base directory where financial data is stored",
+    )
     args = parser.parse_args()
 
     symbol = args.symbol.upper()
-    df = load_financial_statements(symbol)
-    # save as csv
-    df.to_csv(f"{symbol}_financial_statement.csv", index=False)
+    base_path = args.base_path
 
+    # Create output directories if they don't exist
+    financial_statements_dir = os.path.join("data", "processed", "financial_statements")
+    ratios_dir = os.path.join("data", "processed", "ratios")
+
+    os.makedirs(financial_statements_dir, exist_ok=True)
+    os.makedirs(ratios_dir, exist_ok=True)
+
+    print(f"Processing financial data for {symbol}...")
+
+    # Load financial statements
+    df = load_financial_statements(symbol, base_path)
+
+    # Save combined financial statement as CSV in the financial_statements directory
+    financial_statement_path = os.path.join(
+        financial_statements_dir, f"{symbol}_financial_statement.csv"
+    )
+    df.to_csv(financial_statement_path, index=False)
+    print(f"Financial statement saved to {financial_statement_path}")
+
+    # Calculate ratios
+    print(f"Calculating financial ratios for {symbol}")
     activity_ratios = calculate_activity_ratios(df)
     liquidity_ratios = calculate_liquidity_ratios(df)
     solvency_ratios = calculate_solvency_ratios(df)
     profitability_ratios = calculate_profitability_ratios(df)
     additional_metrics = fetch_additional_metrics(df)
 
+    # Merge the ratio dataframes
     if (
         "date" in activity_ratios.columns
         and "date" in liquidity_ratios.columns
@@ -389,16 +447,10 @@ if __name__ == "__main__":
         and "date" in profitability_ratios.columns
         and "date" in additional_metrics.columns
     ):
-        # Set date as index in liquidity_ratios to avoid duplicating it
+        # Set date as index in each dataframe to avoid duplicating it
         liquidity_ratios = liquidity_ratios.set_index("date")
-
-        # Set date as index in solvency_ratios to avoid duplicating it
         solvency_ratios = solvency_ratios.set_index("date")
-
-        # Set date as index in profitability_ratios to avoid duplicating it
         profitability_ratios = profitability_ratios.set_index("date")
-
-        # Set date as index in additional_metrics_df to avoid duplicating it
         additional_metrics = additional_metrics.set_index("date")
 
         # Merge the dataframes
@@ -423,11 +475,17 @@ if __name__ == "__main__":
             ],
             axis=1,
         )
-    ratios.to_csv(f"{symbol}_ratios.csv", index=False)
 
-    # Display results
+    # Save ratios as CSV in the ratios directory
+    ratios_path = os.path.join(ratios_dir, f"{symbol}_ratios.csv")
+    ratios.to_csv(ratios_path, index=False)
+    print(f"Financial ratios saved to {ratios_path}")
+
+    # Display sample results
     print("\nSample of financial statement data:")
     print(df.head(3))
 
     print("\nSample of calculated ratios:")
     print(ratios.head(3))
+
+    print(f"Processing completed successfully for {symbol}")
