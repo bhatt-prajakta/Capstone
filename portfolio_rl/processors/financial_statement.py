@@ -1,8 +1,10 @@
 import os
+import sys
+import argparse
 import pandas as pd
 import numpy as np
 import json
-from typing import Optional, Dict, Any, List, Union
+
 
 # Constants
 DAYS_IN_QUARTER = 90
@@ -189,7 +191,28 @@ def calculate_activity_ratios(df: pd.DataFrame) -> pd.DataFrame:
         df["total_revenue"] / calculated_df["average_total_assets"]
     )
 
-    return calculated_df
+    calculated_df["cash_conversion_cycle"] = (
+        calculated_df["days_of_inventory_onhand"]
+        + calculated_df["days_of_sales_outstanding"]
+        - calculated_df["number_of_days_of_payables"]
+    )
+
+    # Return a subset of the calculated DataFrame
+    return calculated_df[
+        [
+            "date",
+            "inventory_turnover",
+            "days_of_inventory_onhand",
+            "receivables_turnover",
+            "days_of_sales_outstanding",
+            "payables_turnover",
+            "number_of_days_of_payables",
+            "working_capital_turnover",
+            "fixed_asset_turnover",
+            "total_asset_turnover",
+            "cash_conversion_cycle",
+        ]
+    ]
 
 
 def calculate_liquidity_ratios(df: pd.DataFrame) -> pd.DataFrame:
@@ -224,34 +247,182 @@ def calculate_liquidity_ratios(df: pd.DataFrame) -> pd.DataFrame:
         df["cash_and_short_term_investments"] / liquidity_df["daily_cash_expenditures"]
     )
 
-    # Calculate solvency ratios
-    # Measures the company's ability to meet its long-term obligations
+    return liquidity_df[
+        [
+            "date",
+            "current_ratio",
+            "quick_ratio",
+            "cash_ratio",
+            "defensive_internal_ratio",
+        ]
+    ]
 
-    # Calculate profitabilty ratios
-    # Measures the company's ability to generate profits from its resources or sales
 
-    return liquidity_df
+def calculate_solvency_ratios(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate solvency ratios based on the provided financial statements dataframe.
+    The solvency ratios measures the company's ability to meet its long-term obligations
+    """
+    solvency_df = pd.DataFrame()
+    solvency_df["date"] = df["fiscal_date_ending"]
+
+    # Calculate average values
+    solvency_df["average_total_assets"] = (
+        df["total_assets"] + df["total_assets"].shift(1)
+    ) / 2
+
+    solvency_df["average_total_equity"] = (
+        df["total_shareholder_equity"] + df["total_shareholder_equity"].shift(1)
+    ) / 2
+
+    solvency_df["debt_to_assets_ratio"] = (
+        df["short_long_term_debt_total"] / df["total_assets"]
+    )
+
+    solvency_df["debt_to_capital_ratio"] = df["short_long_term_debt_total"] / (
+        df["short_long_term_debt_total"] + df["total_shareholder_equity"]
+    )
+
+    solvency_df["debt_to_equity_ratio"] = (
+        df["short_long_term_debt_total"] / df["total_shareholder_equity"]
+    )
+
+    solvency_df["financial_leverage_ratio"] = (
+        solvency_df["average_total_assets"] / solvency_df["average_total_equity"]
+    )
+
+    solvency_df["debt_to_ebitda_ratio"] = (
+        df["short_long_term_debt_total"] / df["ebitda"]
+    )
+
+    return solvency_df[
+        [
+            "date",
+            "debt_to_capital_ratio",
+            "debt_to_equity_ratio",
+            "financial_leverage_ratio",
+            "debt_to_ebitda_ratio",
+        ]
+    ]
+
+
+def calculate_profitability_ratios(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate profitability ratios based on the provided financial statements dataframe.
+    The profiabilitiy ratios easures the company's ability to generate profits from its resources or sales.
+    """
+    profitability_df = pd.DataFrame()
+    profitability_df["date"] = df["fiscal_date_ending"]
+
+    profitability_df["average_total_assets"] = (
+        df["total_assets"] + df["total_assets"].shift(1)
+    ) / 2
+    profitability_df["average_total_equity"] = (
+        df["total_shareholder_equity"] + df["total_shareholder_equity"].shift(1)
+    ) / 2
+
+    # Return on Sales
+    profitability_df["gross_profit_margin"] = df["gross_profit"] / df["total_revenue"]
+    profitability_df["operating_profit_margin"] = (
+        df["operating_income"] / df["total_revenue"]
+    )
+    # profitability_df["pretax_margin"] =
+    profitability_df["net_profit_margin"] = df["net_income"] / df["total_revenue"]
+
+    # Return on Investment
+    profitability_df["operating_return_on_assets"] = (
+        df["operating_income"] / profitability_df["average_total_assets"]
+    )
+    profitability_df["return_on_assets"] = (
+        df["net_income"] / profitability_df["average_total_assets"]
+    )
+    # profitability_df["return_on_invested_capital"]
+    profitability_df["return_on_equity"] = (
+        df["net_income"] / profitability_df["average_total_equity"]
+    )
+
+    return profitability_df[
+        [
+            "date",
+            "gross_profit_margin",
+            "operating_profit_margin",
+            "net_profit_margin",
+            "operating_return_on_assets",
+            "return_on_assets",
+            "return_on_equity",
+        ]
+    ]
+
+
+def fetch_additional_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    # Fetch other data from the financial statements like deferred revenue and net interest income
+    #
+    additional_metrics_df = pd.DataFrame()
+    additional_metrics_df["date"] = df["fiscal_date_ending"]
+    additional_metrics_df["deferred_revenue"] = df["deferred_revenue"]
+    additional_metrics_df["net_interest_income"] = df["net_interest_income"]
+
+    return additional_metrics_df
 
 
 # testing function
 if __name__ == "__main__":
-    symbol = "AAPL"
+    parser = argparse.ArgumentParser(description="Process financial statement data")
+    parser.add_argument("symbol", type=str, help="Stock symbol to process")
+    args = parser.parse_args()
+
+    symbol = args.symbol.upper()
     df = load_financial_statements(symbol)
     # save as csv
     df.to_csv(f"{symbol}_financial_statement.csv", index=False)
 
     activity_ratios = calculate_activity_ratios(df)
     liquidity_ratios = calculate_liquidity_ratios(df)
-    if "date" in activity_ratios.columns and "date" in liquidity_ratios.columns:
+    solvency_ratios = calculate_solvency_ratios(df)
+    profitability_ratios = calculate_profitability_ratios(df)
+    additional_metrics = fetch_additional_metrics(df)
+
+    if (
+        "date" in activity_ratios.columns
+        and "date" in liquidity_ratios.columns
+        and "date" in solvency_ratios.columns
+        and "date" in profitability_ratios.columns
+        and "date" in additional_metrics.columns
+    ):
         # Set date as index in liquidity_ratios to avoid duplicating it
         liquidity_ratios = liquidity_ratios.set_index("date")
+
+        # Set date as index in solvency_ratios to avoid duplicating it
+        solvency_ratios = solvency_ratios.set_index("date")
+
+        # Set date as index in profitability_ratios to avoid duplicating it
+        profitability_ratios = profitability_ratios.set_index("date")
+
+        # Set date as index in additional_metrics_df to avoid duplicating it
+        additional_metrics = additional_metrics.set_index("date")
+
         # Merge the dataframes
-        ratios = activity_ratios.set_index("date").join(liquidity_ratios)
+        ratios = (
+            activity_ratios.set_index("date")
+            .join(liquidity_ratios)
+            .join(solvency_ratios)
+            .join(profitability_ratios)
+            .join(additional_metrics)
+        )
         # Reset index to keep date as a column
         ratios = ratios.reset_index()
     else:
         # If date column not present or has different name, just concat
-        ratios = pd.concat([activity_ratios, liquidity_ratios], axis=1)
+        ratios = pd.concat(
+            [
+                activity_ratios,
+                liquidity_ratios,
+                solvency_ratios,
+                profitability_ratios,
+                additional_metrics,
+            ],
+            axis=1,
+        )
     ratios.to_csv(f"{symbol}_ratios.csv", index=False)
 
     # Display results
