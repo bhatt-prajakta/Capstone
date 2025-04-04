@@ -16,7 +16,6 @@ Usage:
         python portfolio_rl/processors/financial_statement.py AAPL
 
     Additional options:
-        --base_path: Specify data directory (default: 'data')
         --output_dir: Specify output directory (default: current directory)
 
 Data Assumptions:
@@ -32,51 +31,66 @@ Returns:
 
 import os
 import argparse
+from pathlib import Path
+import json
 import pandas as pd
 import numpy as np
-import json
 
 
 # Constants
 DAYS_IN_QUARTER = 90
+PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+RAW_DATA_DIR = os.path.join(DATA_DIR, "raw")
+
+# Define subdirectories
+BALANCE_SHEETS_DIR = os.path.join(RAW_DATA_DIR, "balance_sheets")
+INCOME_STATEMENTS_DIR = os.path.join(RAW_DATA_DIR, "income_statements")
+CASHFLOW_STATEMENTS_DIR = os.path.join(RAW_DATA_DIR, "cashflow_statements")
 
 
-def load_financial_statements(symbol: str, base_path: str = "data") -> pd.DataFrame:
+def load_financial_statements(ticker: str) -> pd.DataFrame:
     """
-    Load balance sheet, income statement, and cashflow statement data for a given symbol
+    Load balance sheet, income statement, and cashflow statement data for a given ticker
     and return a combined dataframe.
 
     Parameters:
-        symbol (str): Stock ticker symbol (e.g., 'AAPL')
-        base_path (str): Base directory where financial data is stored
+        ticker (str): Stock ticker symbol (e.g., 'AAPL')
 
     Returns:
-        pd.DataFrame: Combined financial statements data for the given symbol
+        pd.DataFrame: Combined financial statements data for the given ticker
     """
-    raw_path = os.path.join(base_path, "raw")
+    # Validate path exists
+    for path in [BALANCE_SHEETS_DIR, INCOME_STATEMENTS_DIR, CASHFLOW_STATEMENTS_DIR]:
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Directory not found: {path}")
 
     balance_sheet_path = os.path.join(
-        raw_path, f"balance_sheets/{symbol}_balance_sheet.json"
+        BALANCE_SHEETS_DIR, f"{ticker}_balance_sheet.json"
     )
     income_statement_path = os.path.join(
-        raw_path, f"income_statements/{symbol}_income_statement.json"
+        INCOME_STATEMENTS_DIR, f"{ticker}_income_statement.json"
     )
     cashflow_statement_path = os.path.join(
-        raw_path, f"cashflow_statements/{symbol}_cashflow_statement.json"
+        CASHFLOW_STATEMENTS_DIR, f"{ticker}_cashflow_statement.json"
     )
 
     try:
         # Load JSON data
-        with open(balance_sheet_path, "r") as f:
+        with open(balance_sheet_path, "r", encoding="utf-8") as f:
             balance_sheet_data = json.load(f)
-        with open(income_statement_path, "r") as f:
+        with open(income_statement_path, "r", encoding="utf-8") as f:
             income_statement_data = json.load(f)
-        with open(cashflow_statement_path, "r") as f:
+        with open(cashflow_statement_path, "r", encoding="utf-8") as f:
             cashflow_statement_data = json.load(f)
     except FileNotFoundError as e:
-        raise FileNotFoundError(f"Financial statement file not found: {e.filename}")
-    except json.JSONDecodeError:
-        raise ValueError("Invalid JSON format in one of the financial statement files")
+        raise FileNotFoundError(
+            f"Financial statement file not found: {e.filename}"
+        ) from e
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            "Invalid JSON format in one of the financial statement files"
+        ) from e
 
     try:
         # Convert JSON data to DataFrames
@@ -88,7 +102,7 @@ def load_financial_statements(symbol: str, base_path: str = "data") -> pd.DataFr
             cashflow_statement_data["quarterly_reports"]
         )
     except KeyError as e:
-        raise ValueError(f"Missing expected key in financial data: {e}")
+        raise ValueError(f"Missing expected key in financial data: {str(e)}") from e
 
     # Convert date strings to datetime objects before merging
     balance_sheet_df["fiscal_date_ending"] = pd.to_datetime(
@@ -135,7 +149,7 @@ def load_financial_statements(symbol: str, base_path: str = "data") -> pd.DataFr
 
 def calculate_activity_ratios(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Calculate financial ratios based on the provided financial statements dataframe.
+    Calculate activity ratios based on the provided financial statements dataframe.
 
     This function currently calculates activity ratios including:
     - Inventory turnover and days of inventory on hand
@@ -145,11 +159,11 @@ def calculate_activity_ratios(df: pd.DataFrame) -> pd.DataFrame:
     - Fixed asset turnover
     - Total asset turnover
 
-    Parameters:
+    Args:
         df (pd.DataFrame): Combined financial statements dataframe from load_financial_statements()
 
     Returns:
-        pd.DataFrame: Dataframe containing calculated financial ratios
+        pd.DataFrame: Dataframe containing activity financial ratios
 
     Notes:
         - This function assumes quarterly financial data
@@ -157,81 +171,79 @@ def calculate_activity_ratios(df: pd.DataFrame) -> pd.DataFrame:
         - First row will contain NaN values for ratios requiring average calculations
     """
 
-    calculated_df = pd.DataFrame()
-    calculated_df["date"] = df["fiscal_date_ending"]
+    activity_df = pd.DataFrame()
+    activity_df["date"] = df["fiscal_date_ending"]
 
     # Calculate average values and intermediate values
-    calculated_df["average_inventory"] = (
-        df["inventory"] + df["inventory"].shift(1)
-    ) / 2
-    calculated_df["average_receivables"] = (
+    activity_df["average_inventory"] = (df["inventory"] + df["inventory"].shift(1)) / 2
+    activity_df["average_receivables"] = (
         df["current_net_receivables"] + df["current_net_receivables"].shift(1)
     ) / 2
-    calculated_df["average_payables"] = (
+    activity_df["average_payables"] = (
         df["current_accounts_payable"] + df["current_accounts_payable"].shift(1)
     ) / 2
 
-    calculated_df["working_capital"] = (
+    activity_df["working_capital"] = (
         df["total_current_assets"] - df["total_current_liabilities"]
     )
-    calculated_df["average_working_capital"] = (
-        calculated_df["working_capital"] + calculated_df["working_capital"].shift(1)
+    activity_df["average_working_capital"] = (
+        activity_df["working_capital"] + activity_df["working_capital"].shift(1)
     ) / 2
 
-    calculated_df["net_fixed_assets"] = df["property_plant_equipment"] - np.where(
+    activity_df["net_fixed_assets"] = df["property_plant_equipment"] - np.where(
         df["accumulated_depreciation_amortization_ppe"].isnull(),
         0,
         df["accumulated_depreciation_amortization_ppe"],
     )
-    calculated_df["average_net_fixed_assets"] = (
-        calculated_df["net_fixed_assets"] + calculated_df["net_fixed_assets"].shift(1)
+    activity_df["average_net_fixed_assets"] = (
+        activity_df["net_fixed_assets"] + activity_df["net_fixed_assets"].shift(1)
     ) / 2
 
-    calculated_df["average_total_assets"] = (
+    activity_df["average_total_assets"] = (
         df["total_assets"] + df["total_assets"].shift(1)
     ) / 2
 
     # Calculate activity ratios
     # Measures the efficiency of a company's operations
-    calculated_df["inventory_turnover"] = (
-        df["cost_of_goods_and_services_sold"] / calculated_df["average_inventory"]
+    activity_df["inventory_turnover"] = (
+        df["cost_of_goods_and_services_sold"] / activity_df["average_inventory"]
     )
-    calculated_df["days_of_inventory_onhand"] = (
-        DAYS_IN_QUARTER / calculated_df["inventory_turnover"]
+    activity_df["days_of_inventory_onhand"] = (
+        DAYS_IN_QUARTER / activity_df["inventory_turnover"]
     )
-    calculated_df["receivables_turnover"] = (
-        df["total_revenue"] / calculated_df["average_receivables"]
-    )
-
-    calculated_df["days_of_sales_outstanding"] = (
-        DAYS_IN_QUARTER / calculated_df["receivables_turnover"]
+    activity_df["receivables_turnover"] = (
+        df["total_revenue"] / activity_df["average_receivables"]
     )
 
-    calculated_df["payables_turnover"] = (
-        df["cost_of_goods_and_services_sold"] / calculated_df["average_payables"]
-    )
-    calculated_df["number_of_days_of_payables"] = (
-        DAYS_IN_QUARTER / calculated_df["payables_turnover"]
-    )
-    calculated_df["working_capital_turnover"] = (
-        df["total_revenue"] / calculated_df["average_working_capital"]
-    )
-    calculated_df["fixed_asset_turnover"] = (
-        df["total_revenue"] / calculated_df["average_net_fixed_assets"]
+    activity_df["days_of_sales_outstanding"] = (
+        DAYS_IN_QUARTER / activity_df["receivables_turnover"]
     )
 
-    calculated_df["total_asset_turnover"] = (
-        df["total_revenue"] / calculated_df["average_total_assets"]
+    activity_df["payables_turnover"] = (
+        df["cost_of_goods_and_services_sold"] / activity_df["average_payables"]
+    )
+    activity_df["number_of_days_of_payables"] = (
+        DAYS_IN_QUARTER / activity_df["payables_turnover"]
+    )
+    activity_df["working_capital_turnover"] = (
+        df["total_revenue"] / activity_df["average_working_capital"]
+    )
+    activity_df["fixed_asset_turnover"] = (
+        df["total_revenue"] / activity_df["average_net_fixed_assets"]
     )
 
-    calculated_df["cash_conversion_cycle"] = (
-        calculated_df["days_of_inventory_onhand"]
-        + calculated_df["days_of_sales_outstanding"]
-        - calculated_df["number_of_days_of_payables"]
+    activity_df["total_asset_turnover"] = (
+        df["total_revenue"] / activity_df["average_total_assets"]
     )
 
-    # Return a subset of the calculated DataFrame
-    return calculated_df[
+    activity_df["cash_conversion_cycle"] = (
+        activity_df["days_of_inventory_onhand"]
+        + activity_df["days_of_sales_outstanding"]
+        - activity_df["number_of_days_of_payables"]
+    )
+
+    # Return a subset of the activity ratios DataFrame
+    return activity_df[
         [
             "date",
             "inventory_turnover",
@@ -252,6 +264,12 @@ def calculate_liquidity_ratios(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate liquidity ratios based on the provided financial statements dataframe.
     The liquidity ratios measure the company's ability to meet its short-term obligations.
+
+    Args:
+        df (pd.DataFrame): Combined financial statements dataframe from load_financial_statements()
+
+    Returns:
+        pd.DataFrame: Dataframe containing liquidity ratios
     """
     liquidity_df = pd.DataFrame()
     liquidity_df["date"] = df["fiscal_date_ending"]
@@ -295,6 +313,12 @@ def calculate_solvency_ratios(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate solvency ratios based on the provided financial statements dataframe.
     The solvency ratios measures the company's ability to meet its long-term obligations
+
+    Args:
+        df (pd.DataFrame): Financial statements dataframe
+
+    Returns:
+        pd.DataFrame: Solvency ratios dataframe
     """
     solvency_df = pd.DataFrame()
     solvency_df["date"] = df["fiscal_date_ending"]
@@ -342,7 +366,22 @@ def calculate_solvency_ratios(df: pd.DataFrame) -> pd.DataFrame:
 def calculate_profitability_ratios(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate profitability ratios based on the provided financial statements dataframe.
-    The profiabilitiy ratios easures the company's ability to generate profits from its resources or sales.
+    The profiabilitiy ratios measures the company's ability to generate profits from
+    its resources or sales.
+
+    Ratios calculated:
+        - Gross Profit Margin: Measures the amount of gross profit generated for each dollar of revenue
+        - Operating Profit Margin: Measures operating efficiency
+        - Net Profit Margin: Overall profitability after all expenses
+        - Operating Return on Assets: Operating efficiency of assets
+        - Return on Assets: Overall return generated by assets
+        - Return on Equity: Return generated on shareholders' investment
+
+    Args:
+        df (pd.DataFrame): Combined financial statements dataframe from load_financial_statements()
+
+    Returns:
+        pd.DataFrame: Dataframe containing profitability ratios
     """
     profitability_df = pd.DataFrame()
     profitability_df["date"] = df["fiscal_date_ending"]
@@ -359,7 +398,7 @@ def calculate_profitability_ratios(df: pd.DataFrame) -> pd.DataFrame:
     profitability_df["operating_profit_margin"] = (
         df["operating_income"] / df["total_revenue"]
     )
-    # profitability_df["pretax_margin"] =
+
     profitability_df["net_profit_margin"] = df["net_income"] / df["total_revenue"]
 
     # Return on Investment
@@ -369,11 +408,12 @@ def calculate_profitability_ratios(df: pd.DataFrame) -> pd.DataFrame:
     profitability_df["return_on_assets"] = (
         df["net_income"] / profitability_df["average_total_assets"]
     )
-    # profitability_df["return_on_invested_capital"]
+
     profitability_df["return_on_equity"] = (
         df["net_income"] / profitability_df["average_total_equity"]
     )
 
+    # Return only the calculation results, filtering out intermediate columns
     return profitability_df[
         [
             "date",
@@ -388,8 +428,15 @@ def calculate_profitability_ratios(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def fetch_additional_metrics(df: pd.DataFrame) -> pd.DataFrame:
-    # Fetch other data from the financial statements like deferred revenue and net interest income
-    #
+    """
+    Fetch other data from the financial statements like deferred revenue and net interest income
+
+    Args:
+        df (pd.DataFrame): Combined financial statements dataframe from load_financial_statements()
+
+    Returns:
+        pd.DataFrame: Dataframe containing additional metrics
+    """
     additional_metrics_df = pd.DataFrame()
     additional_metrics_df["date"] = df["fiscal_date_ending"]
     additional_metrics_df["deferred_revenue"] = df["deferred_revenue"]
@@ -401,16 +448,9 @@ def fetch_additional_metrics(df: pd.DataFrame) -> pd.DataFrame:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process financial statement data")
     parser.add_argument("symbol", type=str, help="Stock symbol to process")
-    parser.add_argument(
-        "--base_path",
-        type=str,
-        default="data",
-        help="Base directory where financial data is stored",
-    )
     args = parser.parse_args()
 
     symbol = args.symbol.upper()
-    base_path = args.base_path
 
     # Create output directories if they don't exist
     financial_statements_dir = os.path.join("data", "processed", "financial_statements")
@@ -422,22 +462,22 @@ if __name__ == "__main__":
     print(f"Processing financial data for {symbol}...")
 
     # Load financial statements
-    df = load_financial_statements(symbol, base_path)
+    financial_data = load_financial_statements(symbol)
 
     # Save combined financial statement as CSV in the financial_statements directory
     financial_statement_path = os.path.join(
         financial_statements_dir, f"{symbol}_financial_statement.csv"
     )
-    df.to_csv(financial_statement_path, index=False)
+    financial_data.to_csv(financial_statement_path, index=False)
     print(f"Financial statement saved to {financial_statement_path}")
 
     # Calculate ratios
     print(f"Calculating financial ratios for {symbol}")
-    activity_ratios = calculate_activity_ratios(df)
-    liquidity_ratios = calculate_liquidity_ratios(df)
-    solvency_ratios = calculate_solvency_ratios(df)
-    profitability_ratios = calculate_profitability_ratios(df)
-    additional_metrics = fetch_additional_metrics(df)
+    activity_ratios = calculate_activity_ratios(financial_data)
+    liquidity_ratios = calculate_liquidity_ratios(financial_data)
+    solvency_ratios = calculate_solvency_ratios(financial_data)
+    profitability_ratios = calculate_profitability_ratios(financial_data)
+    additional_metrics = fetch_additional_metrics(financial_data)
 
     # Merge the ratio dataframes
     if (
@@ -483,7 +523,7 @@ if __name__ == "__main__":
 
     # Display sample results
     print("\nSample of financial statement data:")
-    print(df.head(3))
+    print(financial_data.head(3))
 
     print("\nSample of calculated ratios:")
     print(ratios.head(3))
