@@ -14,7 +14,7 @@ Our primary objective is to develop a reinforcement learning framework that can:
 
 - **Stock Price Data**: Historical price data for various companies
 - **Financial Statements**: Quarterly (10Q) Balance sheets, income statements, and cash flow statements
-- **News Sentiment**: Analyzed articles from sources like New York Times (2014-2024)
+- **News Sentiment**: Analyzed articles from sources like the New York Times (2014-2024)
 - **Economic Indicators**: Quarterly economic data from the Federal Reserve Economic Data (FRED)
 
 ## Repository Structure
@@ -30,6 +30,8 @@ Our primary objective is to develop a reinforcement learning framework that can:
 │   ├── raw/                 # Original unprocessed data
 │   │   ├── news_data/       # News articles by quarter
 │   │   ├── balance_sheets/
+│   │   ├── cashflow_statements/
+│   │   ├── income_statements/
 │   │   └── stock_price.csv
 │   └── stock_prices/        # Stock price data
 ├── notebooks/
@@ -43,7 +45,8 @@ Our primary objective is to develop a reinforcement learning framework that can:
 │   │   ├── agent.py         # RL agent
 │   │   └── rewards.py       # Reward functions
 │   └── visualizations/      # Visualization components
-└── scripts/                 # Utility scripts
+└── scripts/                 # Utility scripts for news data
+└── utils/                   # API key and other utilities
 ```
 
 ## Key Features
@@ -67,7 +70,6 @@ Our primary objective is to develop a reinforcement learning framework that can:
 ### Machine Learning & Reinforcement Learning
 - **PyTorch**: Deep learning framework
 - **Gym**: Environment creation for RL training
-- **Optuna**: Hyperparameter optimization
 
 ### Visualization & Reporting
 - **Matplotlib/Altair**: Statistical visualization and charts
@@ -75,5 +77,5 @@ Our primary objective is to develop a reinforcement learning framework that can:
 
 ## Contributors
 - Stephen John: Data Collection, Processing, and Financial Analysis & Evaluation
-- Prajakta Bhatt: Market and News Sentiment Analysis, Feature Engineering, and Visualization
+- Prajakta Bhatt: Market and News Sentiment Analysis, Feature Engineering, PPO model, and Visualization
 - James Isioma: Reinforcement Learning Model Development and Implementation
