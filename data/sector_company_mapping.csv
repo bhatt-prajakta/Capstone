@@ -1,0 +1,30 @@
+﻿sector,company,ticker
+Automotive,Ford Motor Company,F
+Automotive,General Motors,GM
+Automotive,Tesla Inc,TSLA
+Automotive,Stellantis,STLA
+Automotive,Toyota Motors,TM
+Automotive,Fiat Chrysler,FCAU
+Technology,Meta Platforms,META
+Technology,Facebook,FB
+Technology,Netflix,NFLX
+Technology,Apple Inc,AAPL
+Technology,Microsoft,MSFT
+Technology,Amazon,AMZN
+Finance/Banking,JPMorgan Chase,JPM
+Finance/Banking,Goldman Sachs,GS
+Finance/Banking,Morgan Stanley,MS
+Finance/Banking,Wells Fargo,WFC
+Finance/Banking,Bank of America,BAC
+Finance/Banking,BlackRock,BLK
+AI/Chip Manufacturing,NVIDIA,NVDA
+AI/Chip Manufacturing,Advanced Micro Devices,AMD
+AI/Chip Manufacturing,Intel,INTC
+AI/Chip Manufacturing,Broadcom,AVGO
+AI/Chip Manufacturing,IBM,IBM
+AI/Chip Manufacturing,Taiwan Semiconductor,TSMC
+Healthcare,Johnson & Johnson,JNJ
+Healthcare,Pfizer,PFE
+Healthcare,Moderna,MRNA
+Healthcare,Baxter International,BAX
+Healthcare,Merck & Co.,MRK
