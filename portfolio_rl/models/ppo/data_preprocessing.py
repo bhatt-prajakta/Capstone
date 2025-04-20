@@ -12,19 +12,19 @@ def load_data_sources():
     """
     try:
         # Load stock returns, sentiment and economic indicators data
-        stock_returns = pd.read_csv('data/processed/stock_return_data.csv')
-        sentiment_data = pd.read_csv('data/processed/sector_sentiment_with_metrics_quarterly_2014_2024.csv')
-        economic_data = pd.read_csv('data/processed/economic_indicators_quarterly_2014_2024.csv')
+        stock_returns = pd.read_csv('../data/processed/stock_return_data.csv')
+        sentiment_data = pd.read_csv('../data/processed/sector_sentiment_with_metrics_quarterly_2014_2024.csv')
+        economic_data = pd.read_csv('../data/processed/economic_indicators_quarterly_2014_2024.csv')
 
         # Load sector mapping from file
         global sector_mapping
         if 'sector_mapping' not in globals():
-            sector_mapping = pd.read_csv('data/sector_company_mapping.csv')
+            sector_mapping = pd.read_csv('../data/sector_company_mapping.csv')
 
         # Load fundamental ratios
         fundamental_data = pd.DataFrame()
         for ticker in sector_mapping['ticker']:
-            file_path = f'data/processed/ratios/{ticker}_ratios.csv'
+            file_path = f'../data/processed/ratios/{ticker}_ratios.csv'
             if os.path.exists(file_path):
                 sector_data = pd.read_csv(file_path)
                 sector_data['sector'] = sector_mapping.loc[sector_mapping['ticker'] == ticker, 'sector'].values[0]
