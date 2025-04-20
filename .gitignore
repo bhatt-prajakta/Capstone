@@ -28,3 +28,8 @@ wheels/
 .vscode/
 *.swp
 *.swo
+portfolio_rl/models/ppo/__pycache__/
+.DS_Store
+portfolio_rl/.DS_Store
+portfolio_rl/models/.DS_Store
+portfolio_rl/models/ppo/.DS_Store
