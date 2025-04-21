@@ -286,15 +286,29 @@ def train_dqn_agent(
     episode_rewards = []
 
     for episode in range(n_episodes):
-        state = env.reset()
+        # Reset environment (handle both old and new gym API)
+        reset_result = env.reset()
+        if isinstance(reset_result, tuple):
+            state, _ = reset_result  # New gym API returns (obs, info)
+        else:
+            state = reset_result     # Old gym API returns just obs
+
         episode_reward = 0
 
         for step in range(max_steps):
             # Select action
             action = agent.select_action(state)
 
-            # Take action
-            next_state, reward, done, _ = env.step(action)
+            # Take action (handle both old and new gym API)
+            step_result = env.step(action)
+
+            if len(step_result) == 4:
+                # Old gym API: (next_state, reward, done, info)
+                next_state, reward, done, _ = step_result
+            else:
+                # New gym API: (next_state, reward, terminated, truncated, info)
+                next_state, reward, terminated, truncated, _ = step_result
+                done = terminated or truncated
 
             # Store experience
             agent.replay_buffer.add(state, action, reward, next_state, done)
@@ -429,9 +443,30 @@ def test_dqn_agent():
         )
 
         # Initialize state to determine state dimension
-        state = environment.reset()
+        reset_result = environment.reset()
+        if isinstance(reset_result, tuple):
+            state, _ = reset_result  # New gym API returns (obs, info)
+        else:
+            state = reset_result     # Old gym API returns just obs
+
         state_dim = len(state)
-        action_dim = 7  # Based on your _action_to_allocation method
+
+        # Determine action dimension from environment's action space
+        if hasattr(environment, 'action_space'):
+            if hasattr(environment.action_space, 'n'):
+                # Discrete action space
+                action_dim = environment.action_space.n
+            elif hasattr(environment.action_space, 'shape'):
+                # Continuous action space
+                action_dim = environment.action_space.shape[0]
+            else:
+                # Fallback to default
+                action_dim = 7
+                print("Warning: Could not determine action dimension from environment, using default value of 7")
+        else:
+            # Fallback to default
+            action_dim = 7
+            print("Warning: Environment has no action_space attribute, using default action dimension of 7")
 
         print(f"State dimension: {state_dim}")
         print(f"Action dimension: {action_dim}")
@@ -442,8 +477,38 @@ def test_dqn_agent():
 
         # Test a few steps
         for step in range(5):
+            # Select action
             action = agent.select_action(state)
-            next_state, reward, done, info = environment.step(action)
+
+            # Check if action is compatible with environment's action space
+            if hasattr(environment, 'action_space'):
+                if hasattr(environment.action_space, 'contains'):
+                    # For continuous action spaces, we need to convert the discrete action
+                    # to a continuous action vector
+                    if isinstance(action, (int, np.integer)) and hasattr(environment.action_space, 'shape'):
+                        # Convert discrete action to continuous action vector
+                        # This is a simple example; you might need a more sophisticated mapping
+                        continuous_action = np.zeros(environment.action_space.shape[0])
+                        if action < environment.action_space.shape[0]:
+                            continuous_action[action] = 1.0
+                        else:
+                            # Equal allocation as fallback
+                            continuous_action = np.ones(environment.action_space.shape[0]) / environment.action_space.shape[0]
+
+                        print(f"Converting discrete action {action} to continuous action {continuous_action}")
+                        action = continuous_action
+
+            # Take action (handle both old and new gym API)
+            step_result = environment.step(action)
+
+            if len(step_result) == 4:
+                # Old gym API: (next_state, reward, done, info)
+                next_state, reward, done, info = step_result
+            else:
+                # New gym API: (next_state, reward, terminated, truncated, info)
+                next_state, reward, terminated, truncated, info = step_result
+                done = terminated or truncated
+
             print(
                 f"Step {step + 1} - Action: {action}, Reward: {reward:.4f}, Portfolio Value: {info['portfolio_value']:.2f}, Done: {done}")
             state = next_state

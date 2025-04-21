@@ -147,7 +147,7 @@ def test_environment(seed=None, max_steps=20):
         np.random.seed(seed)
         random.seed(seed)
     # Define test parameters
-    tickers = ['GOOGL', 'PFE', 'TSMC', 'WFC', "META", "AX"]  # Based on available ratio files
+    tickers = ['GOOGL', 'PFE', 'TSMC', 'JPM', "META"]  # Based on available ratio files
 
     # Load real data
     print("Loading real data...")
