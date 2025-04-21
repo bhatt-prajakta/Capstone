@@ -6,6 +6,7 @@ news sentiment, and economic indicators for portfolio optimization.
 """
 
 import os
+import glob
 from pathlib import Path
 from datetime import datetime
 import numpy as np
@@ -15,6 +16,20 @@ from portfolio_rl.models.dqn.reward import RewardCalculator
 # Constants
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.absolute()
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+STOCK_PRICE_DIR = os.path.join(DATA_DIR, "stock_prices")
+
+# Column name mappings for standardization
+PRICE_COLUMN_MAP = {
+    'timestamp': 'date',
+    'adjusted_close': 'price',
+    'close': 'raw_close',
+    'open': 'raw_open',
+    'high': 'raw_high',
+    'low': 'raw_low',
+    'volume': 'volume',
+    'dividend_amount': 'dividend',
+    'split_coefficient': 'split'
+}
 
 
 class PortfolioEnv:
@@ -113,7 +128,7 @@ class PortfolioEnv:
         ]
 
         # Process price data
-        self.price_data = self._prepare_price_data(price_data)
+        self.price_data = self._load_and_prepare_price_data()
 
         # Process financial data
         self.financial_data = self._prepare_financial_data(financial_data)
@@ -136,18 +151,44 @@ class PortfolioEnv:
         # Initialize environment
         self.reset()
 
-    def _prepare_price_data(self, price_data: pd.DataFrame) -> pd.DataFrame:
-        """Standardize price data column names and convert types."""
-        price_data = price_data.copy()
+    def _load_and_prepare_price_data(self) -> pd.DataFrame:
+        """Load and consolidate price data from individual stock files."""
+        all_price_data = []
 
-        # Standardize column names
-        if "Ticker" in price_data.columns:
-            price_data = price_data.rename(columns={"Ticker": "ticker"})
-        if "DlyCalDt" in price_data.columns:
-            price_data = price_data.rename(columns={"DlyCalDt": "date"})
+        for ticker in self.tickers:
+            file_path = os.path.join(STOCK_PRICE_DIR, f"{ticker}_stock_prices.csv")
 
-        # Convert date to datetime
-        price_data["date"] = pd.to_datetime(price_data["date"])
+            try:
+                # Load the price data
+                ticker_data = pd.read_csv(file_path)
+
+                # Rename columns according to our mapping
+                ticker_data = ticker_data.rename(columns=PRICE_COLUMN_MAP)
+
+                # Add ticker column
+                ticker_data['ticker'] = ticker
+
+                # Convert date to datetime
+                ticker_data['date'] = pd.to_datetime(ticker_data['date'])
+
+                # Calculate returns
+                ticker_data['returns'] = ticker_data['price'].pct_change()
+
+                # Handle missing values
+                ticker_data['returns'] = ticker_data['returns'].fillna(0)
+
+                all_price_data.append(ticker_data)
+
+            except FileNotFoundError:
+                print(f"Warning: Price data file not found for {ticker}")
+                continue
+
+        if not all_price_data:
+            raise ValueError("No price data files found for any ticker")
+
+        # Combine all price data
+        price_data = pd.concat(all_price_data, ignore_index=True)
+        price_data = price_data.sort_values(['ticker', 'date'])
 
         return price_data
 
@@ -396,7 +437,7 @@ class PortfolioEnv:
             if sector == "AI/Chip Manufacturing":
                 sentiment_sector_name = "AI/Chip Manufacturing"
             elif sector == "Artificial Intelligence":
-                sentiment_sector_name = "AI/Chip Manufacturing"  # or adjust as needed
+                sentiment_sector_name = "AI/Chip Manufacturing"
             elif (
                 sector == "Technology"
                 and "Technology" not in self.sentiment_data.columns
@@ -635,14 +676,14 @@ class PortfolioEnv:
             ]
 
             if not current_price_data.empty:
-                price = current_price_data["DlyCap"].values[0]
+                price = current_price_data["adjusted_close"].values[0]
             else:
                 # Use the last available price if no data for current date
                 recent_prices = ticker_price_data[
                     ticker_price_data["date"] < current_date
                 ].sort_values("date")
                 if not recent_prices.empty:
-                    price = recent_prices.tail(1)["DlyCap"].values[0]
+                    price = recent_prices.tail(1)["adjusted_close"].values[0]
                 else:
                     # If no prior prices available, use a default value
                     price = 1.0
