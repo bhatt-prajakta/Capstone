@@ -28,6 +28,9 @@ wheels/
 .vscode/
 *.swp
 *.swo
+<<<<<<< HEAD
 # macOS specific files
 .DS_Store
-.DS_Store
+**/.DS_Store
+# Project specific ignores
+portfolio_rl/models/ppo/__pycache__/

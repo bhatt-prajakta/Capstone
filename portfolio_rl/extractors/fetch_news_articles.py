@@ -17,7 +17,7 @@ SECTORS = {
 }
 
 # Function to get API key
-def get_api_key(filename="../utils/nyt_api_key.txt"):
+def get_api_key(filename="API Key"):
     """
     Reads the NYT API key from a text file.
 
