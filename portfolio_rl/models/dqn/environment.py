@@ -11,6 +11,8 @@ from pathlib import Path
 from datetime import datetime
 import numpy as np
 import pandas as pd
+import gym
+from gym import spaces
 from portfolio_rl.models.dqn.reward import RewardCalculator
 
 # Constants
@@ -20,32 +22,33 @@ STOCK_PRICE_DIR = os.path.join(DATA_DIR, "stock_prices")
 
 # Column name mappings for standardization
 PRICE_COLUMN_MAP = {
-    'timestamp': 'date',
-    'adjusted_close': 'price',
-    'close': 'raw_close',
-    'open': 'raw_open',
-    'high': 'raw_high',
-    'low': 'raw_low',
-    'volume': 'volume',
-    'dividend_amount': 'dividend',
-    'split_coefficient': 'split'
+    "timestamp": "date",
+    "adjusted_close": "price",
+    "close": "raw_close",
+    "open": "raw_open",
+    "high": "raw_high",
+    "low": "raw_low",
+    "volume": "volume",
+    "dividend_amount": "dividend",
+    "split_coefficient": "split",
 }
 
 
-class PortfolioEnv:
+class PortfolioEnv(gym.Env):
     """Environment for portfolio optimization using financial data."""
+    metadata = {'render.modes': ['human']}
 
     def __init__(
         self,
         financial_data: pd.DataFrame,
         sentiment_data: pd.DataFrame,
         economic_data: pd.DataFrame,
-        price_data: pd.DataFrame,
         tickers: list[str],
         initial_balance: float = 10000.0,
         transaction_cost: float = 0.001,
         window_size: int = 10,
         max_steps: int = 252,  # Approximately one trading year
+        use_old_step_api: bool = False,  # For backward compatibility
     ):
         """
         Initialize the portfolio environment.
@@ -54,13 +57,15 @@ class PortfolioEnv:
             financial_data: DataFrame containing financial ratios
             sentiment_data: DataFrame containing news sentiment metrics
             economic_data: DataFrame containing economic indicators
-            price_data: DataFrame containing price data (must have 'ticker', 'date', 'price' columns)
             tickers: List of stock tickers to consider
             initial_balance: Initial portfolio balance
             transaction_cost: Cost per transaction as a fraction of trade value
             window_size: Number of past time steps to include in state
             max_steps: Maximum number of steps per episode
+            use_old_step_api: If True, step() returns (obs, reward, done, info) instead of
+                             (obs, reward, terminated, truncated, info)
         """
+        super(PortfolioEnv, self).__init__()
         # Define ticker sector mapping
         self.ticker_sector_map = {
             "AAPL": "Technology",
@@ -148,6 +153,44 @@ class PortfolioEnv:
         # Calculate sector averages
         self.sector_metrics = self._calculate_sector_metrics()
 
+        # Flag for backward compatibility with older gym API
+        self._return_old_step_api = use_old_step_api
+
+        # Define action and observation spaces
+        # Action space: continuous allocation weights for each asset
+        self.action_space = spaces.Box(
+            low=0, 
+            high=1, 
+            shape=(self.n_assets,), 
+            dtype=np.float32
+        )
+
+        # Calculate observation space dimension
+        # For each ticker: price, volatility, momentum, financial features, sector one-hot, position
+        sectors = sorted(set(self.ticker_sector_map.values()))
+        ticker_feature_dim = 3 + len(self.financial_ratio_columns) + len(sectors) + 1
+
+        # Sentiment features: 4 metrics per sector
+        sentiment_feature_dim = len(sectors) * 4
+
+        # Economic features
+        econ_cols = [col for col in self.economic_data.columns if col not in ["date"]]
+        economic_feature_dim = max(1, len(econ_cols))
+
+        # Portfolio features: cash balance and portfolio value
+        portfolio_feature_dim = 2
+
+        # Total observation dimension
+        obs_dim = (ticker_feature_dim * self.n_assets) + sentiment_feature_dim + economic_feature_dim + portfolio_feature_dim
+
+        # Observation space: continuous state vector
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf, 
+            shape=(obs_dim,),
+            dtype=np.float32
+        )
+
         # Initialize environment
         self.reset()
 
@@ -163,19 +206,25 @@ class PortfolioEnv:
                 ticker_data = pd.read_csv(file_path)
 
                 # Rename columns according to our mapping
+                ticker_data.columns = ticker_data.columns.str.strip().str.lower()
                 ticker_data = ticker_data.rename(columns=PRICE_COLUMN_MAP)
 
                 # Add ticker column
-                ticker_data['ticker'] = ticker
+                ticker_data["ticker"] = ticker
+
+                print(f"\n--- {ticker} ---")
+                print("Before strip/rename:", pd.read_csv(file_path, nrows=0).columns.tolist())
+                print("After strip+lower:", ticker_data.columns.tolist())
+                print("After rename:", ticker_data.rename(columns=PRICE_COLUMN_MAP).columns.tolist())
 
                 # Convert date to datetime
-                ticker_data['date'] = pd.to_datetime(ticker_data['date'])
+                ticker_data["date"] = pd.to_datetime(ticker_data["date"])
 
                 # Calculate returns
-                ticker_data['returns'] = ticker_data['price'].pct_change()
+                ticker_data["returns"] = ticker_data["price"].pct_change()
 
                 # Handle missing values
-                ticker_data['returns'] = ticker_data['returns'].fillna(0)
+                ticker_data["returns"] = ticker_data["returns"].fillna(0)
 
                 all_price_data.append(ticker_data)
 
@@ -188,7 +237,7 @@ class PortfolioEnv:
 
         # Combine all price data
         price_data = pd.concat(all_price_data, ignore_index=True)
-        price_data = price_data.sort_values(['ticker', 'date'])
+        price_data = price_data.sort_values(["ticker", "date"])
 
         return price_data
 
@@ -285,17 +334,35 @@ class PortfolioEnv:
 
         return sector_financial
 
-    def reset(self):
+    def seed(self, seed=None):
+        """Set random seed for reproducibility.
+
+        Args:
+            seed: Random seed
+
+        Returns:
+            List containing the seed
+        """
+        np.random.seed(seed)
+        return [seed]
+
+    def reset(self, seed=None):
         """
         Reset the environment to initial state.
 
+        Args:
+            seed: Random seed for reproducibility
+
         Returns:
-            Initial state observation
+            Tuple of (initial state observation, info dictionary)
         """
+        # Set random seed if provided
+        if seed is not None:
+            self.seed(seed)
+
         self.balance = self.initial_balance
         self.portfolio = np.zeros(self.n_assets)  # Holdings of each asset
         self.portfolio_units = np.zeros(self.n_assets)
-        #self.initial_prices = self._get_initial_prices()
         self.portfolio_value = self.initial_balance
         self.current_step = self.window_size
 
@@ -312,7 +379,22 @@ class PortfolioEnv:
         self.date_history = [self.current_date]
         self.action_history = []
 
-        return self._get_state()
+        # Get initial state
+        initial_state = self._get_state()
+
+        # Return state and info dictionary as per gym convention
+        info = {
+            "portfolio_value": self.portfolio_value,
+            "date": self.current_date,
+            "portfolio_allocation": self.portfolio.copy(),
+        }
+
+        # For backward compatibility with older code
+        if self._return_old_step_api:
+            return initial_state
+
+        # Return in the format expected by newer gym versions
+        return initial_state, info
 
     def _get_state(self):
         # Get the current date
@@ -510,6 +592,18 @@ class PortfolioEnv:
         # Handle any NaN values in the state
         state = np.nan_to_num(state, nan=0.0)
 
+        # Ensure state is in the correct format for the observation space
+        state = state.astype(np.float32)
+
+        # Verify state shape matches observation space
+        if hasattr(self, 'observation_space') and state.shape != self.observation_space.shape:
+            print(f"Warning: State shape {state.shape} does not match observation space shape {self.observation_space.shape}")
+            # Pad or truncate state to match observation space shape
+            if len(state) < self.observation_space.shape[0]:
+                state = np.pad(state, (0, self.observation_space.shape[0] - len(state)), 'constant')
+            else:
+                state = state[:self.observation_space.shape[0]]
+
         return state
 
     def step(self, action):
@@ -519,7 +613,7 @@ class PortfolioEnv:
             action: Action to take (portfolio allocation)
 
         Returns:
-            Tuple of (next_state, reward, done, info)
+            Tuple of (next_state, reward, terminated, truncated, info)
         """
         # Map action to portfolio allocation
         new_allocation = self._action_to_allocation(action)
@@ -555,15 +649,26 @@ class PortfolioEnv:
         # Store portfolio value
         self.value_history.append(self.portfolio_value)
 
-        # Calculate reward
-        reward = RewardCalculator.simple_return(
-            self.portfolio_value, old_portfolio_value
+        # Calculate portfolio returns for volatility estimation
+        if len(self.value_history) > 1:
+            returns = np.diff(self.value_history) / self.value_history[:-1]
+            portfolio_volatility = np.std(returns) if len(returns) > 1 else 0.0
+        else:
+            portfolio_volatility = 0.0
+
+        # Calculate reward using risk-adjusted return
+        reward = RewardCalculator.risk_adjusted_return(
+            self.portfolio_value, 
+            old_portfolio_value,
+            portfolio_volatility,
+            risk_free_rate=0.02,  # Approximate risk-free rate
+            risk_aversion=0.5     # Balance between return and risk
         )
 
         # Check if episode is done
-        self.done = (self.current_step >= len(self.dates) - 1) or (
-            self.current_step >= self.window_size + self.max_steps
-        )
+        terminated = (self.current_step >= len(self.dates) - 1)
+        truncated = (self.current_step >= self.window_size + self.max_steps)
+        self.done = terminated or truncated
 
         # Get next state
         next_state = self._get_state()
@@ -573,12 +678,18 @@ class PortfolioEnv:
             "portfolio_value": self.portfolio_value,
             "transaction_cost": transaction_cost,
             "date": self.current_date,
-            "portfolio_allocation": self.portfolio,
+            "portfolio_allocation": self.portfolio.copy(),
             "old_portfolio_value": old_portfolio_value,
             "return": reward,
+            "volatility": portfolio_volatility
         }
 
-        return next_state, reward, self.done, info
+        # For backward compatibility with older code
+        if hasattr(self, '_return_old_step_api') and self._return_old_step_api:
+            return next_state, reward, self.done, info
+
+        # Return in the format expected by newer gym versions
+        return next_state, reward, terminated, truncated, info
 
     def _action_to_allocation(self, action):
         """
@@ -590,6 +701,16 @@ class PortfolioEnv:
         Returns:
             Array of portfolio allocations
         """
+        # Validate action against action space if available
+        if hasattr(self, 'action_space'):
+            if isinstance(action, np.ndarray) and not self.action_space.contains(action):
+                # Clip action to be within action space bounds
+                action = np.clip(
+                    action, 
+                    self.action_space.low, 
+                    self.action_space.high
+                )
+
         # If action is an index, convert to predefined allocation
         if isinstance(action, (int, np.integer)):
             # Generate predefined allocations
@@ -621,6 +742,9 @@ class PortfolioEnv:
 
         # If action is a vector, ensure it sums to 1
         elif isinstance(action, np.ndarray):
+            # Convert to float32 for consistency
+            action = action.astype(np.float32)
+
             # Ensure non-negative allocations
             action = np.maximum(action, 0)
 
@@ -629,7 +753,7 @@ class PortfolioEnv:
                 return action / np.sum(action)
             else:
                 # If all zeros, return equal allocation
-                return np.ones(len(self.tickers)) / len(self.tickers)
+                return np.ones(len(self.tickers), dtype=np.float32) / len(self.tickers)
 
         else:
             raise ValueError(f"Unsupported action type: {type(action)}")
@@ -676,14 +800,14 @@ class PortfolioEnv:
             ]
 
             if not current_price_data.empty:
-                price = current_price_data["adjusted_close"].values[0]
+                price = current_price_data["price"].values[0]
             else:
                 # Use the last available price if no data for current date
                 recent_prices = ticker_price_data[
                     ticker_price_data["date"] < current_date
                 ].sort_values("date")
                 if not recent_prices.empty:
-                    price = recent_prices.tail(1)["adjusted_close"].values[0]
+                    price = recent_prices.tail(1)["price"].values[0]
                 else:
                     # If no prior prices available, use a default value
                     price = 1.0
