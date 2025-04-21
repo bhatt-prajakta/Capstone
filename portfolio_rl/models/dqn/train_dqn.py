@@ -16,7 +16,6 @@ Arguments:
 
 import os
 import argparse
-from datetime import datetime
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -24,9 +23,9 @@ from pathlib import Path
 import torch
 
 # Import project modules
-from environment import PortfolioEnv
-from agent import DQNAgent
-from reward import RewardCalculator
+from portfolio_rl.models.dqn.environment import PortfolioEnv
+from portfolio_rl.models.dqn.agent import DQNAgent
+from portfolio_rl.models.dqn.reward import RewardCalculator
 
 # Constants
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.absolute()

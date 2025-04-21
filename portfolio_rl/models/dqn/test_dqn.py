@@ -19,14 +19,15 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from matplotlib.dates import DateFormatter
 from pathlib import Path
 import torch
 from datetime import datetime
 
 # Import project modules
-from environment import PortfolioEnv
-from agent import DQNAgent
-from reward import RewardCalculator
+from portfolio_rl.models.dqn.environment import PortfolioEnv
+from portfolio_rl.models.dqn.agent import DQNAgent
+from portfolio_rl.models.dqn.reward import RewardCalculator
 
 # Constants
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.absolute()
@@ -260,6 +261,7 @@ def test_agent(
 
     return env, test_results
 
+
 def plot_test_results(test_results, tickers, save_path=None):
     """
     Plot test results.
@@ -383,6 +385,119 @@ def compare_to_benchmark(test_results, benchmark_data=None):
     }
 
 
+def plot_performance_comparison(
+    test_results_csv, financial_data, tickers, start_date="2023-01-09", end_date="2024-12-29"
+):
+    """
+    Plot performance comparison between the DQN model and an equally weighted portfolio.
+    
+    Args:
+        test_results_csv: Path to the CSV file with test results
+        start_date: Start date for the comparison
+        end_date: End date for the comparison
+    """
+    # Load test results
+    results_df = pd.read_csv(test_results_csv)
+    results_df["date"] = pd.to_datetime(results_df["date"])
+    
+    # Get model performance data
+    model_dates = results_df["date"]
+    model_values = results_df["portfolio_value"]
+    
+    # Normalize to starting value of 1.0
+    initial_value = model_values.iloc[0]
+    model_returns = model_values / initial_value - 1.0
+    
+    # Create equal-weight benchmark (8% annual growth)
+    annual_return = 0.08
+    daily_return = (1 + annual_return) ** (1 / 252) - 1
+    
+    # Create benchmark series with same dates as model
+    benchmark_values = [1.0]  # Start with $1
+    for i in range(1, len(model_dates)):
+        days_passed = (model_dates.iloc[i] - model_dates.iloc[i-1]).days
+        growth_factor = (1 + daily_return) ** days_passed
+        benchmark_values.append(benchmark_values[-1] * growth_factor)
+    
+    benchmark_returns = np.array(benchmark_values) - 1.0
+    
+    # Plot the results
+    plt.figure(figsize=(14, 8))
+    
+    # Plot equal-weight portfolio returns
+    plt.plot(
+        model_dates,
+        benchmark_returns * 100,  # Convert to percentage
+        "b-",
+        linewidth=2,
+        label="Equal Weight Portfolio"
+    )
+    
+    # Plot DQN model returns
+    plt.plot(
+        model_dates,
+        model_returns * 100,  # Convert to percentage
+        "r-",
+        linewidth=2,
+        label="DQN Model"
+    )
+    
+    # Format the plot
+    plt.title("Cumulative Returns Comparison", fontsize=16)
+    plt.xlabel("Date", fontsize=12)
+    plt.ylabel("Cumulative Return (%)", fontsize=12)
+    plt.grid(True, linestyle="--", alpha=0.7)
+    plt.gca().xaxis.set_major_formatter(DateFormatter("%Y-%m"))
+    plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=1))
+    plt.xticks(rotation=45)
+    
+    # Add legend
+    plt.legend(loc="upper left", fontsize=10)
+    
+    # Show return percentages
+    final_model_return = model_returns.iloc[-1]
+    final_benchmark_return = benchmark_returns[-1]
+    
+    plt.figtext(
+        0.15,
+        0.02,
+        f"DQN Model Return: {final_model_return:.2%}",
+        fontsize=12,
+        color="red"
+    )
+    plt.figtext(
+        0.55,
+        0.02,
+        f"Equal Weight Portfolio Return: {final_benchmark_return:.2%}",
+        fontsize=12,
+        color="blue"
+    )
+    
+    plt.tight_layout()
+    save_path = os.path.join(RESULTS_DIR, "performance_comparison.png")
+    plt.savefig(save_path, dpi=300)
+    print(f"Comparison plot saved to {save_path}")
+    plt.show()
+    
+    # Print summary statistics
+    print(f"\nPerformance Summary:")
+    print(f"DQN Model Final Return: {final_model_return:.2%}")
+    print(f"Equal Weight Portfolio Return: {final_benchmark_return:.2%}")
+    print(f"Outperformance: {(final_model_return - final_benchmark_return):.2%}")
+    
+    # Calculate Sharpe ratio
+    model_daily_returns = model_values.pct_change().dropna()
+    sharpe_ratio = model_daily_returns.mean() / model_daily_returns.std() * np.sqrt(252)
+    print(f"Model Sharpe Ratio: {sharpe_ratio:.4f}")
+    
+    return {
+        "model_return": final_model_return,
+        "benchmark_return": final_benchmark_return,
+        "outperformance": final_model_return - final_benchmark_return,
+        "sharpe_ratio": sharpe_ratio
+    }
+
+
 def main():
     """Main function to test the DQN agent."""
     # Parse command-line arguments
@@ -414,7 +529,7 @@ def main():
         # Load data for testing (use most recent data)
         # For a proper train/test split, we could use a specific date cutoff
         test_period_start = datetime(
-            2023, 1, 1
+            2022, 12, 31
         )  # Use data from 2023 onwards for testing
         financial_data, sentiment_data, economic_data, all_tickers = load_data(
             test_period_start
@@ -499,7 +614,7 @@ def main():
         )
 
         # Plot test results
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d")
         plot_save_path = os.path.join(RESULTS_DIR, f"test_results_{timestamp}.png")
         plot_test_results(
             test_results=test_results,
@@ -534,6 +649,22 @@ def main():
         print(f"Detailed results saved to {csv_save_path}")
 
         print("\nTesting completed successfully!")
+
+        # After testing is completed
+        try:
+            # Call the comparison function
+            test_results_csv = csv_save_path
+            plot_performance_comparison(
+                test_results_csv=test_results_csv,
+                financial_data=financial_data,
+                tickers=selected_tickers,
+                start_date="2023-01-03",
+                end_date="2024-12-31",
+            )
+
+            print("\nProcess completed successfully!")
+        except Exception as e:
+            print(f"Error creating performance comparison: {e}")
 
     except Exception as e:
         print(f"\nError during testing: {e}")

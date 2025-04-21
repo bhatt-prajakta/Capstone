@@ -111,7 +111,9 @@ class PortfolioEnv(gym.Env):
         # Define financial ratio columns
         self.financial_ratio_columns = [
             "inventory_turnover",
+            "days_of_inventory_onhand",
             "receivables_turnover",
+            "days_of_sales_outstanding",
             "payables_turnover",
             "working_capital_turnover",
             "fixed_asset_turnover",
@@ -153,6 +155,13 @@ class PortfolioEnv(gym.Env):
         # Use the later of the two dates as the start date
         start_date = max(economic_min_date, sentiment_min_date)
 
+        # Get the latest date from economic and sentiment data
+        economic_max_date = self.economic_data["date"].max()
+        sentiment_max_date = self.sentiment_data["date"].max()
+
+        # Use the earlier of the two dates as the end date
+        end_date = min(economic_max_date, sentiment_max_date)
+
         print(
             f"Financial data date range: {self.price_data['date'].min()} to {self.price_data['date'].max()}"
         )
@@ -164,7 +173,11 @@ class PortfolioEnv(gym.Env):
         )
 
         # Filter price data to match the date range of economic and sentiment data
-        self.price_data = self.price_data[self.price_data["date"] >= start_date]
+        self.price_data = self.price_data[
+            (self.price_data["date"] >= start_date) &
+            (self.price_data["date"] <= end_date)
+        ]
+
         print(
             f"Aligned data date range: {self.price_data['date'].min()} to {self.price_data['date'].max()}"
         )
@@ -647,26 +660,21 @@ class PortfolioEnv(gym.Env):
         # Store old portfolio value for reward calculation
         old_portfolio_value = self.portfolio_value
 
-        # Calculate transaction costs with progressive penalty
-        base_cost_rate = 0.02  # 2% base transaction cost
+        # Set costs
+        base_cost_rate = 0.01  # 1% base transaction cost
+        market_impact_factor = 5.0  # Market impact factor
+
+        # Calculate one-way turnover
         turnover = abs(new_allocation - self.portfolio).sum() / 2  # Divide by 2 to get one-way turnover
 
-        # Progressive penalty - costs increase non-linearly with larger trades
-        if turnover <= 0.2:  # Small rebalance
-            effective_rate = base_cost_rate
-        elif turnover <= 0.5:  # Medium rebalance
-            effective_rate = base_cost_rate * 1.5  # 3% effective rate
-        else:  # Large rebalance
-            effective_rate = base_cost_rate * 2.0  # 4% effective rate
-
-        transaction_cost = effective_rate * turnover * self.portfolio_value
-
         # Add market impact/slippage
-        market_impact_rate = 0.01  # 1% for price impact
-        market_impact = market_impact_rate * turnover * self.portfolio_value
+        fixed_costs = base_cost_rate * turnover * self.portfolio_value
+
+        # Market impact cost
+        market_impact = market_impact_factor * base_cost_rate * np.sqrt(turnover) * self.portfolio_value
 
         # Total trading costs
-        total_trading_cost = transaction_cost + market_impact
+        total_trading_cost = fixed_costs + market_impact
 
         # Apply transaction costs directly to portfolio value
         self.portfolio_value -= total_trading_cost
@@ -713,8 +721,13 @@ class PortfolioEnv(gym.Env):
                 old_portfolio_value,
                 portfolio_volatility,
                 risk_free_rate=0.03,  # Approximate risk-free rate
-                risk_aversion=0.95,  # Balance between return and risk
+                risk_aversion=0.7,  # Balance between return and risk
+                num_days=63,
+                periods_per_year=252
             )
+
+            # Apply scaling to prevent exploding rewards
+            reward = np.clip(reward, -3.0, 3.0)
         else:
             reward = 0.0  # Fallback if old_portfolio_value is zero
 
@@ -729,7 +742,7 @@ class PortfolioEnv(gym.Env):
         # Additional info
         info = {
             "portfolio_value": self.portfolio_value,
-            "transaction_cost": transaction_cost,
+            "transaction_cost": total_trading_cost,
             "date": self.current_date,
             "portfolio_allocation": self.portfolio.copy(),
             "old_portfolio_value": old_portfolio_value,
