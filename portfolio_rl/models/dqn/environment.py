@@ -36,19 +36,20 @@ PRICE_COLUMN_MAP = {
 
 class PortfolioEnv(gym.Env):
     """Environment for portfolio optimization using financial data."""
-    metadata = {'render.modes': ['human']}
+
+    metadata = {"render.modes": ["human"]}
 
     def __init__(
-        self,
-        financial_data: pd.DataFrame,
-        sentiment_data: pd.DataFrame,
-        economic_data: pd.DataFrame,
-        tickers: list[str],
-        initial_balance: float = 10000.0,
-        transaction_cost: float = 0.001,
-        window_size: int = 10,
-        max_steps: int = 252,  # Approximately one trading year
-        use_old_step_api: bool = False,  # For backward compatibility
+            self,
+            financial_data: pd.DataFrame,
+            sentiment_data: pd.DataFrame,
+            economic_data: pd.DataFrame,
+            tickers: list[str],
+            initial_balance: float = 10000.0,
+            transaction_cost: float = 0.01,
+            window_size: int = 10,
+            max_steps: int = 252,  # Approximately one trading year
+            use_old_step_api: bool = False,  # For backward compatibility
     ):
         """
         Initialize the portfolio environment.
@@ -144,6 +145,30 @@ class PortfolioEnv(gym.Env):
         # Process economic data
         self.economic_data = self._prepare_economic_data(economic_data)
 
+        # Align data date ranges
+        # Get the earliest date from economic and sentiment data
+        economic_min_date = self.economic_data["date"].min()
+        sentiment_min_date = self.sentiment_data["date"].min()
+
+        # Use the later of the two dates as the start date
+        start_date = max(economic_min_date, sentiment_min_date)
+
+        print(
+            f"Financial data date range: {self.price_data['date'].min()} to {self.price_data['date'].max()}"
+        )
+        print(
+            f"Economic data date range: {self.economic_data['date'].min()} to {self.economic_data['date'].max()}"
+        )
+        print(
+            f"Sentiment data date range: {self.sentiment_data['date'].min()} to {self.sentiment_data['date'].max()}"
+        )
+
+        # Filter price data to match the date range of economic and sentiment data
+        self.price_data = self.price_data[self.price_data["date"] >= start_date]
+        print(
+            f"Aligned data date range: {self.price_data['date'].min()} to {self.price_data['date'].max()}"
+        )
+
         # Organize price data by ticker
         self.ticker_price_data = self._organize_price_by_ticker()
 
@@ -159,10 +184,7 @@ class PortfolioEnv(gym.Env):
         # Define action and observation spaces
         # Action space: continuous allocation weights for each asset
         self.action_space = spaces.Box(
-            low=0, 
-            high=1, 
-            shape=(self.n_assets,), 
-            dtype=np.float32
+            low=0, high=1, shape=(self.n_assets,), dtype=np.float32
         )
 
         # Calculate observation space dimension
@@ -181,14 +203,16 @@ class PortfolioEnv(gym.Env):
         portfolio_feature_dim = 2
 
         # Total observation dimension
-        obs_dim = (ticker_feature_dim * self.n_assets) + sentiment_feature_dim + economic_feature_dim + portfolio_feature_dim
+        obs_dim = (
+                (ticker_feature_dim * self.n_assets)
+                + sentiment_feature_dim
+                + economic_feature_dim
+                + portfolio_feature_dim
+        )
 
         # Observation space: continuous state vector
         self.observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf, 
-            shape=(obs_dim,),
-            dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
         )
 
         # Initialize environment
@@ -211,11 +235,6 @@ class PortfolioEnv(gym.Env):
 
                 # Add ticker column
                 ticker_data["ticker"] = ticker
-
-                print(f"\n--- {ticker} ---")
-                print("Before strip/rename:", pd.read_csv(file_path, nrows=0).columns.tolist())
-                print("After strip+lower:", ticker_data.columns.tolist())
-                print("After rename:", ticker_data.rename(columns=PRICE_COLUMN_MAP).columns.tolist())
 
                 # Convert date to datetime
                 ticker_data["date"] = pd.to_datetime(ticker_data["date"])
@@ -289,7 +308,7 @@ class PortfolioEnv(gym.Env):
         for ticker in self.tickers:
             ticker_data = self.price_data[
                 self.price_data["ticker"] == ticker
-            ].sort_values("date")
+                ].sort_values("date")
             ticker_price_data[ticker] = ticker_data
         return ticker_price_data
 
@@ -447,7 +466,7 @@ class PortfolioEnv(gym.Env):
                 self.financial_data[
                     (self.financial_data["ticker"] == ticker)
                     & (self.financial_data["date"] <= current_date)
-                ]
+                    ]
                 .sort_values("date")
                 .tail(1)
             )
@@ -521,8 +540,8 @@ class PortfolioEnv(gym.Env):
             elif sector == "Artificial Intelligence":
                 sentiment_sector_name = "AI/Chip Manufacturing"
             elif (
-                sector == "Technology"
-                and "Technology" not in self.sentiment_data.columns
+                    sector == "Technology"
+                    and "Technology" not in self.sentiment_data.columns
             ):
                 sentiment_sector_name = "Technology"
 
@@ -531,7 +550,7 @@ class PortfolioEnv(gym.Env):
                 col
                 for col in self.sentiment_data.columns
                 if sentiment_sector_name in col
-                and any(
+                   and any(
                     term in col.lower()
                     for term in ["sentiment", "momentum", "dispersion", "normalized"]
                 )
@@ -596,13 +615,20 @@ class PortfolioEnv(gym.Env):
         state = state.astype(np.float32)
 
         # Verify state shape matches observation space
-        if hasattr(self, 'observation_space') and state.shape != self.observation_space.shape:
-            print(f"Warning: State shape {state.shape} does not match observation space shape {self.observation_space.shape}")
+        if (
+                hasattr(self, "observation_space")
+                and state.shape != self.observation_space.shape
+        ):
+            print(
+                f"Warning: State shape {state.shape} does not match observation space shape {self.observation_space.shape}"
+            )
             # Pad or truncate state to match observation space shape
             if len(state) < self.observation_space.shape[0]:
-                state = np.pad(state, (0, self.observation_space.shape[0] - len(state)), 'constant')
+                state = np.pad(
+                    state, (0, self.observation_space.shape[0] - len(state)), "constant"
+                )
             else:
-                state = state[:self.observation_space.shape[0]]
+                state = state[: self.observation_space.shape[0]]
 
         return state
 
@@ -621,12 +647,32 @@ class PortfolioEnv(gym.Env):
         # Store old portfolio value for reward calculation
         old_portfolio_value = self.portfolio_value
 
-        # Calculate transaction costs
-        transaction_cost = self._calculate_transaction_cost(new_allocation)
+        # Calculate transaction costs with progressive penalty
+        base_cost_rate = 0.02  # 2% base transaction cost
+        turnover = abs(new_allocation - self.portfolio).sum() / 2  # Divide by 2 to get one-way turnover
 
-        # Update portfolio
+        # Progressive penalty - costs increase non-linearly with larger trades
+        if turnover <= 0.2:  # Small rebalance
+            effective_rate = base_cost_rate
+        elif turnover <= 0.5:  # Medium rebalance
+            effective_rate = base_cost_rate * 1.5  # 3% effective rate
+        else:  # Large rebalance
+            effective_rate = base_cost_rate * 2.0  # 4% effective rate
+
+        transaction_cost = effective_rate * turnover * self.portfolio_value
+
+        # Add market impact/slippage
+        market_impact_rate = 0.01  # 1% for price impact
+        market_impact = market_impact_rate * turnover * self.portfolio_value
+
+        # Total trading costs
+        total_trading_cost = transaction_cost + market_impact
+
+        # Apply transaction costs directly to portfolio value
+        self.portfolio_value -= total_trading_cost
+
+        # Update portfolio allocations
         self.portfolio = new_allocation
-        self.balance -= transaction_cost
 
         # Store portfolio state
         self.portfolio_history.append(self.portfolio.copy())
@@ -643,31 +689,38 @@ class PortfolioEnv(gym.Env):
         # Store date
         self.date_history.append(self.current_date)
 
-        # Calculate new portfolio value
-        self.portfolio_value = self._calculate_portfolio_value()
+        # Calculate new portfolio value AFTER transaction costs and market movement
+        market_updated_portfolio_value = self._calculate_portfolio_value()
+        self.portfolio_value = market_updated_portfolio_value
 
         # Store portfolio value
         self.value_history.append(self.portfolio_value)
 
         # Calculate portfolio returns for volatility estimation
         if len(self.value_history) > 1:
-            returns = np.diff(self.value_history) / self.value_history[:-1]
-            portfolio_volatility = np.std(returns) if len(returns) > 1 else 0.0
+            log_returns = np.log(
+                np.array(self.value_history[1:]) / np.array(self.value_history[:-1])
+            )
+            portfolio_volatility = np.std(log_returns) if len(log_returns) > 1 else 0.0
         else:
             portfolio_volatility = 0.0
 
-        # Calculate reward using risk-adjusted return
-        reward = RewardCalculator.risk_adjusted_return(
-            self.portfolio_value, 
-            old_portfolio_value,
-            portfolio_volatility,
-            risk_free_rate=0.02,  # Approximate risk-free rate
-            risk_aversion=0.5     # Balance between return and risk
-        )
+        # Calculate reward using risk-adjusted return with log returns
+        if old_portfolio_value > 0:
+            log_return = np.log(self.portfolio_value / old_portfolio_value)
+            reward = RewardCalculator.risk_adjusted_return(
+                self.portfolio_value,
+                old_portfolio_value,
+                portfolio_volatility,
+                risk_free_rate=0.03,  # Approximate risk-free rate
+                risk_aversion=0.95,  # Balance between return and risk
+            )
+        else:
+            reward = 0.0  # Fallback if old_portfolio_value is zero
 
         # Check if episode is done
-        terminated = (self.current_step >= len(self.dates) - 1)
-        truncated = (self.current_step >= self.window_size + self.max_steps)
+        terminated = self.current_step >= len(self.dates) - 1
+        truncated = self.current_step >= self.window_size + self.max_steps
         self.done = terminated or truncated
 
         # Get next state
@@ -681,11 +734,11 @@ class PortfolioEnv(gym.Env):
             "portfolio_allocation": self.portfolio.copy(),
             "old_portfolio_value": old_portfolio_value,
             "return": reward,
-            "volatility": portfolio_volatility
+            "volatility": portfolio_volatility,
         }
 
         # For backward compatibility with older code
-        if hasattr(self, '_return_old_step_api') and self._return_old_step_api:
+        if hasattr(self, "_return_old_step_api") and self._return_old_step_api:
             return next_state, reward, self.done, info
 
         # Return in the format expected by newer gym versions
@@ -702,45 +755,68 @@ class PortfolioEnv(gym.Env):
             Array of portfolio allocations
         """
         # Validate action against action space if available
-        if hasattr(self, 'action_space'):
-            if isinstance(action, np.ndarray) and not self.action_space.contains(action):
+        if hasattr(self, "action_space"):
+            if isinstance(action, np.ndarray) and not self.action_space.contains(
+                    action
+            ):
                 # Clip action to be within action space bounds
-                action = np.clip(
-                    action, 
-                    self.action_space.low, 
-                    self.action_space.high
-                )
+                action = np.clip(action, self.action_space.low, self.action_space.high)
+
+        n_assets = len(self.tickers)
+        max_allocation_per_asset = 0.4  # 40% maximum per position
 
         # If action is an index, convert to predefined allocation
         if isinstance(action, (int, np.integer)):
             # Generate predefined allocations
-            n_assets = len(self.tickers)
-
             if action == 0:
                 # Equal allocation
                 return np.ones(n_assets) / n_assets
 
             elif action < n_assets + 1:
-                # All in one asset
-                allocation = np.zeros(n_assets)
-                allocation[action - 1] = 1.0
+                # All in one asset - but cap at max_allocation_per_asset
+                allocation = np.ones(n_assets) * 0.05  # Base 5% for all assets
+                primary_asset = action - 1
+                secondary_asset = (primary_asset + 1) % n_assets  # Next asset in line
+                third_asset = (primary_asset + 2) % n_assets  # Third asset in line
+
+                # Primary gets 30%, secondary gets 15%, tertiary gets 10%, rest get 5%
+                allocation[primary_asset] = 0.30
+                allocation[secondary_asset] = 0.15
+                allocation[third_asset] = 0.10
+
+                # Normalize to ensure sum is 1.0
+                allocation = allocation / allocation.sum()
                 return allocation
 
             elif action == n_assets + 1:
-                # 60/40 portfolio (60% in first half, 40% in second half)
+                # 60/40 portfolio but ensure no position exceeds max_allocation_per_asset
                 allocation = np.zeros(n_assets)
                 mid_point = n_assets // 2
+
                 if mid_point > 0:
-                    allocation[:mid_point] = 0.6 / mid_point
-                if n_assets - mid_point > 0:
-                    allocation[mid_point:] = 0.4 / (n_assets - mid_point)
+                    per_asset_first_half = 0.6 / mid_point
+                    if per_asset_first_half > max_allocation_per_asset:
+                        # Adjust if it would exceed max per position
+                        allocation[:mid_point] = max_allocation_per_asset
+                        # Redistribute excess equally to second half
+                        excess = 0.6 - (max_allocation_per_asset * mid_point)
+                        if n_assets - mid_point > 0:
+                            allocation[mid_point:] = (0.4 + excess) / (n_assets - mid_point)
+                    else:
+                        allocation[:mid_point] = per_asset_first_half
+                        if n_assets - mid_point > 0:
+                            allocation[mid_point:] = 0.4 / (n_assets - mid_point)
+                else:
+                    # Edge case: only one asset
+                    allocation[0] = 1.0
+
                 return allocation
 
             else:
                 # Default: equal weights
                 return np.ones(n_assets) / n_assets
 
-        # If action is a vector, ensure it sums to 1
+        # If action is a vector, ensure it sums to 1 and cap individual positions
         elif isinstance(action, np.ndarray):
             # Convert to float32 for consistency
             action = action.astype(np.float32)
@@ -748,12 +824,44 @@ class PortfolioEnv(gym.Env):
             # Ensure non-negative allocations
             action = np.maximum(action, 0)
 
-            # Normalize to sum to 1
+            # First, normalize to sum to 1
             if np.sum(action) > 0:
-                return action / np.sum(action)
+                action = action / np.sum(action)
             else:
                 # If all zeros, return equal allocation
-                return np.ones(len(self.tickers), dtype=np.float32) / len(self.tickers)
+                return np.ones(n_assets, dtype=np.float32) / n_assets
+
+            # Now apply the maximum allocation cap
+            # Find positions exceeding the cap
+            excess_mask = action > max_allocation_per_asset
+            excess_count = np.sum(excess_mask)
+
+            if excess_count > 0:
+                # Calculate total excess allocation
+                total_excess = np.sum(action[excess_mask] - max_allocation_per_asset)
+
+                # Cap the exceeding positions
+                action[excess_mask] = max_allocation_per_asset
+
+                # Redistribute excess to positions below the cap
+                below_cap_mask = ~excess_mask
+                below_cap_count = np.sum(below_cap_mask)
+
+                if below_cap_count > 0:
+                    # Distribute excess equally among positions below cap
+                    action[below_cap_mask] += total_excess / below_cap_count
+
+                    # Ensure redistribution doesn't push any position over the cap
+                    over_after_redist = action > max_allocation_per_asset
+                    if np.any(over_after_redist & below_cap_mask):
+                        # Normalize again as a simple solution
+                        action = np.minimum(action, max_allocation_per_asset)
+                        if np.sum(action) > 0:
+                            action = action / np.sum(action)
+                        else:
+                            return np.ones(n_assets, dtype=np.float32) / n_assets
+
+            return action
 
         else:
             raise ValueError(f"Unsupported action type: {type(action)}")
@@ -797,7 +905,7 @@ class PortfolioEnv(gym.Env):
             ticker_price_data = self.ticker_price_data[ticker]
             current_price_data = ticker_price_data[
                 ticker_price_data["date"] == current_date
-            ]
+                ]
 
             if not current_price_data.empty:
                 price = current_price_data["price"].values[0]
@@ -805,7 +913,7 @@ class PortfolioEnv(gym.Env):
                 # Use the last available price if no data for current date
                 recent_prices = ticker_price_data[
                     ticker_price_data["date"] < current_date
-                ].sort_values("date")
+                    ].sort_values("date")
                 if not recent_prices.empty:
                     price = recent_prices.tail(1)["price"].values[0]
                 else:
@@ -867,7 +975,7 @@ class PortfolioEnv(gym.Env):
         return sector_allocations
 
     def check_rebalancing_trigger(
-        self, ticker, ratio_name="return_on_equity", threshold=0.8
+            self, ticker, ratio_name="return_on_equity", threshold=0.8
     ):
         """Check if a ticker underperforms relative to its sector."""
         current_date = self.dates[self.current_step]
@@ -876,14 +984,14 @@ class PortfolioEnv(gym.Env):
         ticker_data = self.financial_data[
             (self.financial_data["ticker"] == ticker)
             & (self.financial_data["date"] == current_date)
-        ]
+            ]
 
         if not ticker_data.empty and ratio_name in ticker_data.columns:
             ticker_ratio = ticker_data[ratio_name].values[0]
 
             if (
-                sector in self.sector_metrics
-                and ratio_name in self.sector_metrics[sector].columns
+                    sector in self.sector_metrics
+                    and ratio_name in self.sector_metrics[sector].columns
             ):
                 sector_ratio = self.sector_metrics[sector].loc[current_date, ratio_name]
 
