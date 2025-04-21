@@ -109,11 +109,11 @@ class DQNAgent:
         learning_rate: float = 0.001,
         gamma: float = 0.99,
         epsilon_start: float = 1.0,
-        epsilon_end: float = 0.01,
-        epsilon_decay: float = 0.995,
+        epsilon_end: float = 0.1,
+        epsilon_decay: float = 0.999,
         buffer_size: int = 10000,
         batch_size: int = 64,
-        target_update_freq: int = 10,
+        target_update_freq: int = 5,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
         """Initialize the DQN agent.
@@ -217,6 +217,7 @@ class DQNAgent:
         # Update Q-network
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=1.0)
         self.optimizer.step()
 
         # Update target network periodically
