@@ -33,7 +33,7 @@ class RewardCalculator:
         new_portfolio_value: float,
         old_portfolio_value: float,
         portfolio_volatility: float,
-        risk_free_rate: float = 0.02,
+        risk_free_rate: float = 0.03,
         risk_aversion: float = 0.2,
         num_days: int = 63,  # approx. 1 quarter of trading days
         periods_per_year: int = 252
@@ -62,7 +62,7 @@ class RewardCalculator:
 
         # Adjust for risk (similar to Sharpe ratio concept)
         if portfolio_volatility > 0:
-            risk_adjusted = (log_return - rf_adjusted) / portfolio_volatility
+            risk_adjusted = (log_return - rf_adjusted) / (portfolio_volatility + 1e-6)
         else:
             risk_adjusted = log_return - rf_adjusted
 
