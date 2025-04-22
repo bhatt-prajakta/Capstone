@@ -17,6 +17,13 @@ Our primary objective is to develop a reinforcement learning framework that can:
 - **News Sentiment**: Analyzed articles from sources like the New York Times (2014-2024)
 - **Economic Indicators**: Quarterly economic data from the Federal Reserve Economic Data (FRED)
 
+## Prerequisites (Data Access Statement)
+
+To use this project, you will need:
+- An API key from AlphaVantage to access financial data
+- A Wharton Research Data Services (WRDS) account for additional financial information
+- Python 3.9+ and dependencies listed in requirements.txt
+
 ## Repository Structure
 
 ```
@@ -32,7 +39,7 @@ Our primary objective is to develop a reinforcement learning framework that can:
 │   │   ├── balance_sheets/
 │   │   ├── cashflow_statements/
 │   │   ├── income_statements/
-│   │   └── stock_price.csv
+│   │   └── stock_prices/
 │   └── stock_prices/        # Stock price data
 ├── notebooks/
 │   ├── exploratory/         # Data exploration notebooks
@@ -43,9 +50,13 @@ Our primary objective is to develop a reinforcement learning framework that can:
 │   ├── models/              # RL model implementations
 │   │   ├── environment.py   # Portfolio environment
 │   │   ├── agent.py         # RL agent
-│   │   └── rewards.py       # Reward functions
+│   │   ├── reward.py        # Reward functions
+│   │   ├── env_test_script.py   # Test script for Portfolio environment
+│   │   ├── run_pipeline.py  # Run both train and test scripts
+│   │   ├── test_dqn.py      # Test DQN model
+│   │   └── train_dqn.py     # Train DQN model
 │   └── visualizations/      # Visualization components
-└── scripts/                 # Utility scripts for news data
+├── scripts/                 # Utility scripts for news data
 └── utils/                   # API key and other utilities
 ```
 
@@ -72,10 +83,16 @@ Our primary objective is to develop a reinforcement learning framework that can:
 - **Gym**: Environment creation for RL training
 
 ### Visualization & Reporting
-- **Matplotlib/Altair**: Statistical visualization and charts
-- **Streamlit**: Interactive dashboard
+- **Matplotlib**: Statistical visualization and charts
+
+## Setup and Installation
+
+1. Clone this repository
+2. Install required packages: `pip install -r requirements.txt`
+3. Create a `config.yaml` file with your AlphaVantage API key and WRDS credentials
+4. Run data extraction scripts to populate the data directory
 
 ## Contributors
-- Stephen John: Data Collection, Processing, and Financial Analysis & Evaluation
+- Stephen John: Data Collection, Processing, Financial Analysis & Evaluation, and DQN Model
 - Prajakta Bhatt: Market and News Sentiment Analysis, Feature Engineering, PPO model, and Visualization
-- James Isioma: Reinforcement Learning Model Development and Implementation
+- James Isioma: Rainbow DQN Reinforcement Learning Model Development and Implementation
